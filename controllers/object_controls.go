@@ -101,6 +101,14 @@ const (
 	NvidiaAnnotationHashKey = "nvidia.com/last-applied-hash"
 	// NvidiaDisableRequireEnvName is the env name to disable default cuda constraints
 	NvidiaDisableRequireEnvName = "NVIDIA_DISABLE_REQUIRE"
+	// ConfigTOMLVolumeName indicates name of the volume backing the toolkit's config.toml
+	ConfigTOMLVolumeName = "config-toml"
+	// ConfigTOMLFileName indicates config's file name (should match the name in the toolkit's image)
+	ConfigTOMLFileName = "config.toml"
+	// ConfigTOMLMountDir indicates where the config file is mounted (should match the path in the toolkit's image)
+	ConfigTOMLMountDir = "/etc/nvidia-container-runtime/"
+	// ConfigTOMLConfigMapKey indicates the key in the config map containing the config.toml file contents
+	ConfigTOMLConfigMapKey = "config.toml"
 )
 
 // RepoConfigPathMap indicates standard OS specific paths for repository configuration files
@@ -780,6 +788,44 @@ func TransformToolkit(obj *appsv1.DaemonSet, config *gpuv1.ClusterPolicySpec, n 
 		socketVol := corev1.Volume{Name: volMountSocketName, VolumeSource: corev1.VolumeSource{HostPath: &corev1.HostPathVolumeSource{Path: path.Dir(runtimeSocketFile)}}}
 		obj.Spec.Template.Spec.Volumes = append(obj.Spec.Template.Spec.Volumes, socketVol)
 	}
+
+	// setup toolkit config mount
+	if config.Toolkit.ConfigTOMLConfigMapName != "" {
+		configMapDefaultMode := int32(0440)
+		configTOMLVol := corev1.Volume{
+			Name: ConfigTOMLVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: config.Toolkit.ConfigTOMLConfigMapName,
+					},
+					Items: []corev1.KeyToPath{
+						{
+							Key:  ConfigTOMLConfigMapKey,
+							Path: ConfigTOMLFileName,
+						},
+					},
+					DefaultMode: &configMapDefaultMode,
+				},
+			},
+		}
+		obj.Spec.Template.Spec.Volumes = append(
+			obj.Spec.Template.Spec.Volumes,
+			configTOMLVol,
+		)
+
+		configTOMLVolMount := corev1.VolumeMount{
+			Name:      ConfigTOMLVolumeName,
+			ReadOnly:  true,
+			MountPath: ConfigTOMLMountDir,
+		}
+		obj.Spec.Template.Spec.Containers[0].VolumeMounts = append(
+			obj.Spec.Template.Spec.Containers[0].VolumeMounts,
+			configTOMLVolMount,
+		)
+
+	}
+
 	return nil
 }
 
